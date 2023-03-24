@@ -334,14 +334,14 @@ class CocoDataset(CustomDataset):
     def fast_eval_recall(self, results, proposal_nums, iou_thrs, logger=None):
         gt_bboxes = []
         for i in range(len(self.img_ids)):
-            ann_ids = self.coco.get_ann_ids(img_ids=self.img_ids[i])
+            ann_ids = self.coco.get_ann_ids(img_ids=[self.img_ids[i]])
             ann_info = self.coco.load_anns(ann_ids)
             if len(ann_info) == 0:
                 gt_bboxes.append(np.zeros((0, 4)))
                 continue
             bboxes = []
             for ann in ann_info:
-                if ann.get('ignore', False) or ann['iscrowd']:
+                if ann.get('ignore', False) or ann.get('iscrowd', False):
                     continue
                 x1, y1, w, h = ann['bbox']
                 bboxes.append([x1, y1, x1 + w, y1 + h])
