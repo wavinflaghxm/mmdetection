@@ -98,8 +98,8 @@ def load_clip_features(
 @LINEAR_LAYERS.register_module()
 class CLIPLinear(BaseModule):
     def __init__(self,
-                 in_channels,
-                 out_channels,
+                 in_features,
+                 out_features,
                  clip_channels=None,
                  use_sigmoid=True,
                  scale_init=0.0,
@@ -107,9 +107,8 @@ class CLIPLinear(BaseModule):
                  clip_cfg=dict(type='RN50', load_from=None),
                  init_cfg=None):
         super(CLIPLinear, self).__init__(init_cfg=init_cfg)
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.clip_channels = clip_channels
+        self.in_features = in_features
+        self.out_features = out_features
         self.use_sigmoid = use_sigmoid
         assert use_sigmoid
 
@@ -119,20 +118,21 @@ class CLIPLinear(BaseModule):
             if load_from is not None:
                 clip_feat = torch.tensor(np.load(load_from))
             else:
+                assert clip_cfg.get('type', False) and clip_cfg.get('ann_file', False)
                 clip_feat = load_clip_features(**clip_cfg)
             clip_feat = clip_feat.type(torch.float32)
-            assert clip_feat.size(0) == out_channels
+            assert clip_feat.size(0) == out_features
             clip_feat = F.normalize(clip_feat, p=2, dim=1)
             self.register_buffer("clip_feat", clip_feat)
             self.clip_channels = clip_feat.size(1)
         else:
-            self.register_buffer("clip_feat", None)
-            self.clip_channels = clip_channels
             assert clip_channels is not None
+            self.clip_channels = clip_channels
+            self.register_buffer("clip_feat", None)
 
         # define projection head
         self.image_projection = nn.Identity()
-        self.text_projection = nn.Linear(self.clip_channels, in_channels)
+        self.text_projection = nn.Linear(self.clip_channels, in_features)
 
         # define and initialize bias
         self.text_bias = nn.Linear(self.clip_channels, 1)
@@ -150,6 +150,7 @@ class CLIPLinear(BaseModule):
         if isinstance(x, tuple):
             x, clip_feat = x
         else:
+            assert self.clip_feat is not None
             clip_feat = self.clip_feat
 
         text_pred = self.text_projection(clip_feat)

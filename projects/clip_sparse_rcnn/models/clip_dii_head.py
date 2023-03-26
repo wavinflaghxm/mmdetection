@@ -12,8 +12,8 @@ from mmdet.core import multi_apply
 from mmdet.models.builder import HEADS, build_loss
 from mmdet.models.dense_heads.atss_head import reduce_mean
 from mmdet.models.losses import accuracy
-from mmdet.models.utils import build_transformer, build_linear_layer, load_clip_features
-from .bbox_head import BBoxHead
+from mmdet.models.utils import build_transformer, build_linear_layer
+from mmdet.models.roi_heads import BBoxHead
 
 
 class AttentionPool2d(nn.Module):
@@ -143,11 +143,16 @@ class CLIPDIIHead(BBoxHead):
             if load_from is not None:
                 clip_feat = torch.tensor(np.load(load_from))
             else:
+                from .clip_linear import load_clip_features
+                assert clip_cfg.get('type', False) and clip_cfg.get('ann_file', False)
                 clip_feat = load_clip_features(**clip_cfg)
             clip_feat = clip_feat.type(torch.float32)
             clip_feat = F.normalize(clip_feat, p=2, dim=1)
             self.register_buffer("clip_feat", clip_feat)
             self.clip_channels = clip_feat.size(1)
+
+            self.cls_alpha = self.clip_cfg.get('cls_alpha', 0)
+            assert 0 <= self.cls_alpha <= 1
 
             self.attention_pool = AttentionPool2d(roi_feat_size, in_channels, num_heads)
             self.query_attention = MultiheadAttention(
@@ -172,14 +177,21 @@ class CLIPDIIHead(BBoxHead):
                 build_activation_layer(dict(type='ReLU', inplace=True)))
 
         # over load the self.fc_cls in BBoxHead
-        if self.loss_cls.use_sigmoid:
-            linear_cfg.update(
-                in_channels=in_channels,
-                out_channels=self.num_classes,
-                clip_channels=self.clip_channels if self.clip_cfg is not None else None)
-            self.fc_cls = build_linear_layer(linear_cfg)
+        layer_type = linear_cfg.get('type', 'Linear')
+        if layer_type == 'CLIPLinear':
+            if self.clip_cfg is not None:
+                clip_channels = self.clip_channels
+            else:
+                clip_channels = None
+                assert linear_cfg.get('register', False)
+            linear_cfg.update(clip_channels=clip_channels)
         else:
-            self.fc_cls = nn.Linear(in_channels, self.num_classes + 1)
+            # use nn.Linear
+            linear_cfg = None
+        self.fc_cls = build_linear_layer(
+            linear_cfg,
+            in_features=in_channels,
+            out_features=self.num_classes if self.loss_cls.use_sigmoid else self.num_classes + 1)
 
         self.reg_fcs = nn.ModuleList()
         for _ in range(num_reg_fcs):
@@ -265,7 +277,8 @@ class CLIPDIIHead(BBoxHead):
         for reg_layer in self.reg_fcs:
             reg_feat = reg_layer(reg_feat)
 
-        cls_score = self.fc_cls((cls_feat, self.clip_feat)).view(
+        cls_feat = cls_feat if self.clip_cfg is None else (cls_feat, self.clip_feat)
+        cls_score = self.fc_cls(cls_feat).view(
             N, num_proposals, self.num_classes
             if self.loss_cls.use_sigmoid else self.num_classes + 1)
         bbox_delta = self.fc_reg(reg_feat).view(N, num_proposals, 4)
@@ -287,10 +300,9 @@ class CLIPDIIHead(BBoxHead):
             query_cls_score = self.fc_cls((query_feat, self.clip_feat)).view(
                 N, num_proposals, self.num_classes 
                 if self.loss_cls.use_sigmoid else self.num_classes + 1)
-
-            alpha = self.clip_cfg.get('cls_alpha', 0)
-            assert 0 <= alpha <= 1
-            cls_score = (cls_score.sigmoid() ** (1 - alpha)) * (query_cls_score.sigmoid() ** alpha)
+            
+            cls_score = (cls_score.sigmoid() ** (
+                1 - self.cls_alpha)) * (query_cls_score.sigmoid() ** self.cls_alpha)
             cls_score = -torch.log((1 / cls_score) - 1)
 
         return cls_score, bbox_delta, obj_feat.view(
@@ -539,7 +551,7 @@ class CLIPDIIHead(BBoxHead):
             query_mask = clip_feat.new_ones((batch_size, m)).to(torch.bool)
             query_mask[batch_idx, pad_idx] = False
         else:
-            # from mmdet.datasets.class_name import lvis_novel_label_ids
+            # from mmdet.datasets.dataset_class_info import lvis_novel_label_ids
             # novel_ids = torch.tensor(lvis_novel_label_ids, device=clip_feat.device)
             # query_feat = clip_feat[novel_ids]
             # query_feat = query_feat.repeat(batch_size, 1, 1)

@@ -2,7 +2,6 @@
 from .brick_wrappers import AdaptiveAvgPool2d, adaptive_avg_pool2d
 from .builder import build_linear_layer, build_transformer
 from .ckpt_convert import pvt_convert
-from .clip_linear import CLIPLinear, load_clip_features
 from .conv_upsample import ConvUpsample
 from .csp_layer import CSPLayer
 from .gaussian_target import gaussian_radius, gen_gaussian_target
@@ -31,6 +30,5 @@ __all__ = [
     'adaptive_avg_pool2d', 'AdaptiveAvgPool2d', 'PatchEmbed', 'nchw_to_nlc',
     'nlc_to_nchw', 'pvt_convert', 'sigmoid_geometric_mean',
     'preprocess_panoptic_gt', 'DyReLU',
-    'get_uncertain_point_coords_with_randomness', 'get_uncertainty',
-    'CLIPLinear', 'load_clip_features'
+    'get_uncertain_point_coords_with_randomness', 'get_uncertainty'
 ]

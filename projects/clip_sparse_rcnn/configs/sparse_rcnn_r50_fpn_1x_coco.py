@@ -1,16 +1,47 @@
-_base_ = './sparse_rcnn_r50_fpn_1x_lvis.py'
+_base_ = [
+    '../../../configs/_base_/datasets/coco_detection.py',
+    '../../../configs/_base_/schedules/schedule_1x.py',
+    '../../../configs/_base_/default_runtime.py'
+]
 num_stages = 6
-num_proposals = 1000
+num_proposals = 100
 model = dict(
-    rpn_head=dict(num_proposals=num_proposals),
+    type='SparseRCNN',
+    backbone=dict(
+        type='ResNet',
+        depth=50,
+        num_stages=4,
+        out_indices=(0, 1, 2, 3),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
+    neck=dict(
+        type='FPN',
+        in_channels=[256, 512, 1024, 2048],
+        out_channels=256,
+        start_level=0,
+        add_extra_convs='on_input',
+        num_outs=4),
+    rpn_head=dict(
+        type='EmbeddingRPNHead',
+        num_proposals=num_proposals,
+        proposal_feature_channel=256),
     roi_head=dict(
-        type='CLIPSparseRoIHead',
+        type='SparseRoIHead',
         num_stages=num_stages,
         stage_loss_weights=[1] * num_stages,
+        proposal_feature_channel=256,
+        bbox_roi_extractor=dict(
+            type='SingleRoIExtractor',
+            roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=2),
+            out_channels=256,
+            featmap_strides=[4, 8, 16, 32]),
         bbox_head=[
             dict(
-                type='CLIPDIIHead',
-                num_classes=1203,
+                type='DIIHead',
+                num_classes=80,
                 num_ffn_fcs=2,
                 num_heads=8,
                 num_cls_fcs=1,
@@ -27,16 +58,6 @@ model = dict(
                     input_feat_shape=7,
                     act_cfg=dict(type='ReLU', inplace=True),
                     norm_cfg=dict(type='LN')),
-                clip_cfg=dict(
-                    type='ViT-B/32',
-                    ann_file='data/lvis_v1/annotations/lvis_v1_val.json',
-                    prompt='all',
-                    save_path='data/metadata/lvis_v1_clip_template.npy',
-                    clip_alpha=0.4),
-                linear_cfg=dict(
-                    type='CLIPLinear',
-                    use_sigmoid=True,
-                    register=False),
                 loss_bbox=dict(type='L1Loss', loss_weight=5.0),
                 loss_iou=dict(type='GIoULoss', loss_weight=2.0),
                 loss_cls=dict(
@@ -65,21 +86,11 @@ model = dict(
                 sampler=dict(type='PseudoSampler'),
                 pos_weight=1) for _ in range(num_stages)
         ]),
-    test_cfg=dict(
-        rpn=None,
-        rcnn=dict(
-            score_thr=0.0001,
-            nms=dict(type='nms', iou_threshold=0.5),
-            max_per_img=300,
-            # proposal=True,
-            # max_per_img=num_proposals,
-        )))
-
-evaluation = dict(interval=2, metric=['bbox'])
+    test_cfg=dict(rpn=None, rcnn=dict(max_per_img=num_proposals)))
 
 # optimizer
 optimizer = dict(_delete_=True, type='AdamW', lr=0.000025, weight_decay=0.0001)
 optimizer_config = dict(_delete_=True, grad_clip=dict(max_norm=1, norm_type=2))
 # learning policy
-lr_config = dict(policy='step', step=[9, 11])
+lr_config = dict(policy='step', step=[8, 11])
 runner = dict(type='EpochBasedRunner', max_epochs=12)

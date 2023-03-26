@@ -1,6 +1,7 @@
 _base_ = [
-    '../../configs/_base_/datasets/lvis_v1_instance.py',
-    '../../configs/_base_/schedules/schedule_1x.py', '../../configs/_base_/default_runtime.py'
+    '../../../configs/_base_/datasets/lvis_v1_instance.py',
+    '../../../configs/_base_/schedules/schedule_1x.py', 
+    '../../../configs/_base_/default_runtime.py'
 ]
 num_stages = 6
 num_proposals = 800

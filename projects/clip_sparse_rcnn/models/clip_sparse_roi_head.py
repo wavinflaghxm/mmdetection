@@ -4,8 +4,8 @@ import torch
 
 from mmdet.core import bbox2result, bbox2roi, bbox_xyxy_to_cxcywh, multiclass_nms
 from mmdet.core.bbox.samplers import PseudoSampler
-from ..builder import HEADS
-from .cascade_roi_head import CascadeRoIHead
+from mmdet.models.builder import HEADS
+from mmdet.models.roi_heads import CascadeRoIHead
 
 
 @HEADS.register_module()
@@ -254,6 +254,7 @@ class CLIPSparseRoIHead(CascadeRoIHead):
             cls_score = bbox_results['cls_score']
             decode_bbox_pred = bbox_results['decode_bbox_pred']
 
+            # set label weight for the sampling class
             num_classes = self.bbox_head[0].num_classes
             fed_weight = label_weights.new_zeros(num_classes + 1)
             fed_weight[sampling_labels] = 1.0
